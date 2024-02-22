@@ -1,21 +1,3 @@
-# Необходимо реализовать простейшую программу-сервер с использованием протокола TCP.
-#
-# Сервер должен поддерживать выполнение нескольких комманд, определяемых на усмотрение студента,
-# но как минимум должен поддерживать выполнение следующих (или аналогичных):
-#
-# ECHO (возвращает данные переданные клиентом после команды),
-# TIME (возвращает текущее время сервера),
-# CLOSE (EXIT/QUIT) (закрывает соединение).
-#
-# Комманда может иметь параметры (например ECHO). Любая команда должна оканчиваться символами \r\n или \n.
-
-# В качестве клиента предполагается использование системных утилит: telnet, netcat и других.
-# Возможно использование собственной программы клиента, но это является не обязательным.
-#
-# Продемонстрировать использование утилит:
-#   nmap -- сканирование портов сервера,
-#   netstat -- список открытых сокетов на сервере, номера портов.
-
 import socket
 import time
 import datetime
@@ -33,33 +15,43 @@ logger.setLevel(logging_level)
 # Добавление обработчика к логгеру
 logger.addHandler(console_handler)
 
-# Время запуска сервера
-run_time = time.time_ns()
-
-
 #   SERVER
+
+run_time = time.time_ns()   # Время запуска сервера
+response_ending = '\r\n> '
+isFin = False
+isKill = False
 
 # Настройки сервера
 HOST = '127.0.0.1'  # Локальный адрес
-PORT = 12345        # Произвольный порт
-
-isFin = False
+PORT = 12345  # Произвольный порт
 
 def handle_command(message):
-    command = message.split()[0]
-    match command:
+    cmd = message
+
+    if len(message) >= 4:
+        cmd = message.split()[0]
+
+    match cmd:
         case 'ECHO':
             words = message.split()
             return " ".join(words[1:])
-        case 'TIME':    # Возвращаем текущее время сервера
+        case 'TIME':  # Возвращаем текущее время сервера
             return datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-        case 'WORK_TIME':   # Возвращаем время работы сервера
+        case 'WORK_TIME':  # Возвращаем время работы сервера
             execution_time = time.time_ns() - run_time
             return format_time(execution_time)
-        case 'CLOSE':    # Закрываем соединение
+        case 'CLOSE':  # Закрываем соединение
+            global isFin
             isFin = True
             return 'Closing connection...'
-        case _: return 'Unknown command'
+        case 'KILL_ME':
+            global isKill
+            isFin = True
+            isKill = True
+            return 'Shutting down the server...'
+        case _:
+            return 'Unknown command'
 
 
 if __name__ == '__main__':
@@ -73,26 +65,42 @@ if __name__ == '__main__':
 
     # Ожидание подключения клиентов
     server_socket.listen(5)
+
     logger.info(f"Server started on {HOST}:{PORT}")
 
-    while True:
+    while not isKill:
         # Принятие соединения
         client_socket, addr = server_socket.accept()
         logger.info(f"Connected by {addr}")
 
+        client_socket.sendall((f'Connected to {HOST}:{PORT}' + response_ending).encode())
+
         # Обработка запросов клиента
         while True:
-            # Получение данных от клиента
-            data = client_socket.recv(1024)
-            if not data:
-                break
+            # Получение данных от клиента`
+            data = b''
+            while True:
+                chunk = client_socket.recv(1024)
+                if not chunk:
+                    break
+                if b'\r\n' in chunk:
+                    break
+                if b'\n' in chunk:
+                    break
+                data += chunk
 
-            # Декодирование данных и обработка команды
-            command = data.decode()
-            response = handle_command(command)
-
-            # Отправка ответа клиенту
-            client_socket.sendall(response.encode())
+            try:
+                # Декодирование данных и обработка команды
+                logger.debug(f"{addr} Received: {len(data)} bytes, Data: {data.decode()}")
+                command = data.decode()
+            except UnicodeDecodeError:
+                logger.error(f"Error decoding. {addr} Received: {len(data)} bytes, Data: {data}")
+                client_socket.sendall(('Incorrect request. Try again...' + response_ending).encode())
+            else:
+                response = handle_command(command)
+                if not isFin:
+                    response += response_ending
+                client_socket.sendall(response.encode())
 
             # Закрытие соединения при необходимости
             if isFin:
@@ -101,3 +109,5 @@ if __name__ == '__main__':
         # Закрытие соединения с клиентом
         client_socket.close()
         logger.info(f"Connection with {addr} closed")
+        isFin = False
+    server_socket.close()
