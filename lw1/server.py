@@ -26,11 +26,14 @@ isKill = False
 HOST = '127.0.0.1'  # Локальный адрес
 PORT = 12345  # Произвольный порт
 
+
 def handle_command(message):
     cmd = message
 
     if len(message) >= 4:
-        cmd = message.split()[0]
+        cmd = message.split()[0].upper()
+
+    logger.debug(f'cmd: {cmd}')
 
     match cmd:
         case 'ECHO':
@@ -87,7 +90,10 @@ if __name__ == '__main__':
                     break
                 if b'\n' in chunk:
                     break
-                data += chunk
+                if b'\x08' in chunk:  # Backspace
+                    data = data[:-1] if data else ''
+                else:
+                    data += chunk
 
             try:
                 # Декодирование данных и обработка команды
