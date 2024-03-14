@@ -5,6 +5,7 @@ import time
 import datetime
 import colorlog
 
+import service.file_manager as file_manager
 from service.file_manager import get_files_and_dirs
 from service.formatter import format_time
 from service.logger_conf import console_handler, logging_level
@@ -31,7 +32,7 @@ class ConnectionHandler:
         self.send_message(f'Connected to {HOST}:{PORT}' + response_ending)
         self.is_disconnect = False
 
-        self.root_dir = os.path.curdir + '\\resources\\'
+        self.root_dir = os.path.curdir + '\\resources\\server'
         self.user_dir = ''
 
     def start(self):
@@ -44,12 +45,16 @@ class ConnectionHandler:
             logger.error(f"Connection refused")
 
     def handle_command(self, request):  # Обработка запросов клиента
+        if not request:
+            return
+
         command = request.split()[0].upper()
+        content = " ".join(request.split()[1:])
+        directory = f'{self.root_dir}\\{self.user_dir}'
 
         # Commands for laboratory work #1
         if 'ECHO' == command:
-            content = request.split()[1:]
-            self.send_message(" ".join(content))
+            self.send_message(content)
         elif 'TIME' == command:  # Возвращаем текущее время сервера
             self.send_message(datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S"))
         elif 'WORK_TIME' == command:  # Возвращаем время работы сервера
@@ -58,13 +63,23 @@ class ConnectionHandler:
 
         # Commands for laboratory work #2
         elif 'UPLOAD' == command:  # Запрос на закачку файла на сервер
-            self.send_message(f'Command "{command}" in developing...')
-            pass
+            if not content:
+                self.send_message('Fail. Bad request')
+                return
+            file_manager.receive_file(self.client_socket, f'{directory}\\{content}')
+            self.send_message('Success')
         elif 'DOWNLOAD' == command:  # Запрос на скачивание файла c сервера
-            self.send_message(f'Command "{command}" in developing...')
-            pass
+            if not content:
+                self.send_message('Fail. Bad request')
+                return
+
+            self.send_message('downloading...')
+            file_manager.send_file(self.client_socket, f'{directory}\\{content}')
+            self.send_message('download complete')
+
+            time.sleep(0.15)
+            self.send_message('Success')
         elif 'LS' == command:  # Запрос на полуение списка файлов и катологов
-            directory = f'{self.root_dir}\\{self.user_dir}'
             logger.debug(f'Directory: {directory}')
             files, dirs = get_files_and_dirs(directory)
             logger.debug(f"files: {files}, dirs: {dirs}")
@@ -72,9 +87,7 @@ class ConnectionHandler:
             entity_list = f"Contents of \\{self.user_dir}:"
 
             if self.user_dir:
-                entity_list += f"\r\n..\\"
-
-            entity_list += f"\r\n.\\"
+                entity_list += f"\r\n.."
 
             for dir_name in dirs:
                 entity_list += f"\r\n{dir_name}\\"
@@ -93,34 +106,23 @@ class ConnectionHandler:
         else:
             self.send_message('Unknown command')
 
-    def get_command(self):
-        # Получение данных от клиента`
-        data = b''
-        while True:
-            chunk = self.client_socket.recv(1024)
-            if not chunk:
-                break
-            if b'\r\n' in chunk:
-                break
-            if b'\n' in chunk:
-                break
-            if b'\x08' in chunk:    # Backspace
-                data = data[:-1] if data else ''
-            else:
-                data += chunk
-        return data
-
     def listener(self):
         while not self.is_disconnect:
             try:
                 # Получение данных от клиента
-                data = self.get_command()
+                data = self.client_socket.recv(1024)
                 # Декодирование данных и обработка команды
                 command = data.decode()
-                logger.debug(f"{self.addr} Received: {len(data)} bytes, Data: {data.decode()}")
+                logger.info(f"{self.addr} Data: {data.decode()}, size: {len(data)} bytes")
             except UnicodeDecodeError:
                 logger.error(f"{self.addr} Error decoding...")
                 self.send_message('Incorrect request. Try again...' + response_ending)
+            except ConnectionResetError:
+                logger.error(f"{self.addr} The client forced the termination of an existing connection")
+                break
+            except ConnectionAbortedError:
+                logger.warning(f"{self.addr} The connection was severed")
+                break
             else:
                 self.handle_command(command)
                 if not self.is_disconnect:
@@ -146,6 +148,8 @@ def server_command_handler(command):
     if 'SHUTDOWN' == cmd:
         global shutdown_server
         shutdown_server = True
+    elif 'SHUTDOWN F' == cmd:
+        os._exit(0)
     elif 'THREADS' == cmd:
         all_threads = threading.enumerate()
         counter = 0
@@ -160,9 +164,7 @@ def server_command_handler(command):
 
 def server_input_command():
     while not shutdown_server:
-        # server_command_handler(input())
-        time.sleep(5)
-        server_command_handler('shutdown')
+        server_command_handler(input())
     logger.info(f'Server: Waiting for the end of sessions')
 
 
@@ -171,6 +173,9 @@ if __name__ == '__main__':
 
     # Создание сокета
     server_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+
+    # Что здесь?
+    server_socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
 
     # Привязка сокета к адресу и порту
     server_socket.bind((HOST, PORT))
@@ -187,6 +192,12 @@ if __name__ == '__main__':
         # Принятие соединения
         client_socket, addr = server_socket.accept()
         ConnectionHandler(client_socket, addr).start()
+
+    # while not shutdown_server:
+    #     client_socket, addr = server_socket.accept()
+    #     print(f"New connection from {addr}")
+    #     client_thread = Thread(target=handle_client, args=(client_socket,))
+    #     client_thread.start()
 
     logger.info(f"Shutting down...")
 
