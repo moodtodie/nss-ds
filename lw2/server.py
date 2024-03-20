@@ -43,6 +43,10 @@ class ConnectionHandler:
             self.client_socket.sendall(message.encode())
         except ConnectionRefusedError:
             logger.error(f"Connection refused")
+        except ConnectionResetError:
+            logger.error(f"Connection reset")
+        except OSError:
+            logger.error(f"OSError: send_message()")
 
     def handle_command(self, request):  # Обработка запросов клиента
         if not request:
@@ -73,9 +77,9 @@ class ConnectionHandler:
                 self.send_message('Fail. Bad request')
                 return
 
-            self.send_message('downloading...')
+            # self.send_message('downloading...')
             file_manager.send_file(self.client_socket, f'{directory}\\{content}')
-            self.send_message('download complete')
+            # self.send_message('download complete')
 
             time.sleep(0.15)
             self.send_message('Success')
@@ -84,7 +88,7 @@ class ConnectionHandler:
             files, dirs = get_files_and_dirs(directory)
             logger.debug(f"files: {files}, dirs: {dirs}")
 
-            entity_list = f"Contents of \\{self.user_dir}:"
+            entity_list = f"Contents of server:"
 
             if self.user_dir:
                 entity_list += f"\r\n.."
@@ -122,6 +126,9 @@ class ConnectionHandler:
                 break
             except ConnectionAbortedError:
                 logger.warning(f"{self.addr} The connection was severed")
+                break
+            except OSError:
+                logger.error(f"{self.addr} OSError")
                 break
             else:
                 self.handle_command(command)
@@ -168,6 +175,8 @@ def server_input_command():
     logger.info(f'Server: Waiting for the end of sessions')
 
 
+server_socket = None
+
 if __name__ == '__main__':
     logger.info("Server is running...")
 
@@ -181,7 +190,7 @@ if __name__ == '__main__':
     server_socket.bind((HOST, PORT))
 
     # Ожидание подключения клиентов
-    server_socket.listen(5)
+    server_socket.listen(1)
 
     logger.info(f"Server started on {HOST}:{PORT}")
 

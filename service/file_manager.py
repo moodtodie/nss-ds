@@ -1,7 +1,20 @@
 import os
 import socket
 import struct
+import time
 import webbrowser
+
+import colorlog
+
+from service.logger_conf import logging_level, console_handler
+
+# from service.logger_conf import logging_level, console_handler
+
+# Создание и настройка логгера
+logger = colorlog.getLogger(__name__)
+logger.setLevel(logging_level)
+# Добавление обработчика к логгеру
+logger.addHandler(console_handler)
 
 
 def get_files_and_dirs(directory):
@@ -18,32 +31,175 @@ def receive_file_size(sck: socket.socket):
     received_bytes = 0
     stream = bytes()
     while received_bytes < expected_bytes:
-        chunk = sck.recv(expected_bytes - received_bytes)
-        stream += chunk
-        received_bytes += len(chunk)
+        try:
+            chunk = sck.recv(expected_bytes - received_bytes)
+            stream += chunk
+            received_bytes += len(chunk)
+        except ConnectionResetError:  # Обрыв соединения
+            logger.error("[receive_file_size] ConnectionResetError")
+            break
+        except OSError:
+            logger.error(f"[receive_file_size] OSError")
+            return 0
     filesize = struct.unpack(fmt, stream)[0]
     return filesize
 
 
 def receive_file(sck: socket.socket, filename):
+    laddr = sck.getsockname()
+    raddr = sck.getpeername()
+
     filesize = receive_file_size(sck)
+
+    logger.debug(f'Received filesize: {filesize}')
+
+    counter = 0
+
     with open(filename, "wb") as f:
         received_bytes = 0
         while received_bytes < filesize:
-            chunk = sck.recv(1024)
-            if chunk:
-                f.write(chunk)
-                received_bytes += len(chunk)
+            try:
+                chunk = sck.recv(1024)
+                if chunk:
+                    f.write(chunk)
+                    received_bytes += len(chunk)
+
+                if counter >= 10:  # Искусственый обрыв сети
+                    counter = 0
+                else:
+                    counter += 1
+
+            except ConnectionResetError:
+                logger.error(f'[receive_file] ConnectionResetError')
+
+                # wait reconnect
+                logger.debug(f'Socket: {sck}')
+                sck = wait_reconnect(sck, laddr, raddr)
+                logger.debug(f'Recovered socket: {sck}')
+
+                if sck.fileno() != -1:
+                    continue  # successfully attempt
+                break  # time out
+            except Exception:
+                logger.error(f'[receive_file] Exception')
+            # except OSError:
+            #     logger.error(f'[receive_file] OSError')
+            #     break  # time out
 
 
 def send_file(sck: socket.socket, filename):
+    laddr = sck.getsockname()
+    raddr = sck.getpeername()
+
     filesize = os.path.getsize(filename)
 
     sck.sendall(struct.pack("<Q", filesize))
 
+    counter = 0
+
+    logger.debug(f'Send filesize: {filesize}')
     with open(filename, "rb") as f:
         while read_bytes := f.read(1024):
-            sck.sendall(read_bytes)
+
+            if counter >= 20:  # Искусственый обрыв сети
+                logger.debug(f'Socket closed: {sck}')
+                sck.close()
+
+                counter = 0
+            else:
+                counter += 1
+
+            while True:
+                try:
+                    sck.sendall(read_bytes)
+                    break
+                # except ConnectionResetError:
+                #     logger.error(f'[send_file] ConnectionResetError:')
+                # except OSError:
+                #     logger.error(f'[send_file] OSError')
+                except Exception:
+                    logger.error(f'[send_file] Exception')
+
+                    # attempt to reconnect
+                    logger.debug(f'Socket: {sck}')
+                    sck = reconnect(sck, laddr, raddr)
+                    logger.debug(f'Recovered socket: {sck}')
+
+                    time.sleep(0.1)
+
+                    if sck.fileno() != -1:
+                        continue  # successfully attempt
+                    return  # time out
+
+
+def wait_reconnect(sck: socket.socket, laddr, raddr, time_out=15) -> socket.socket:
+    if sck.fileno() != -1:
+        sck.close()
+
+    logger.debug(f'sck: {sck}')
+
+    start_time = time.time()
+    logger.debug(f'[wr] Waiting for reconnect. Time: {start_time}, Time out: {start_time + time_out}')
+
+    while start_time + time_out > time.time():
+        if sck.fileno() == -1:
+            sck = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+
+        try:
+            if sck.getsockname() != laddr:
+                sck.bind(laddr)
+        except OSError:
+            sck.bind(laddr)
+
+        logger.debug(f'[wr] Socket: {sck}')
+
+        if sck.getpeername() != raddr:
+            sck.listen()
+            addr = sck.accept()
+
+            if addr != raddr:
+                logger.debug(f'[wr] Incorrect socket connection: {sck}')
+                sck.close()
+                continue
+            else:
+                logger.debug(f'[wr] Correct socket connection: {sck}')
+                return sck
+        else:
+            return sck
+    sck.close()
+    return sck
+
+
+def reconnect(sck: socket.socket, laddr, raddr, attempts=4) -> socket.socket:
+    logger.debug(f'[r] Waiting for reconnect. Attempts: {attempts}')
+
+    for i in range(attempts):
+        if sck.fileno() == -1:
+            sck = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+
+        try:
+            if sck.getsockname() != laddr:
+                sck.bind(laddr)
+        except OSError:
+            sck.bind(laddr)
+
+        logger.debug(f'[r] Socket: {sck}')
+        logger.debug(f'[r] Attempt #{i + 1} connect to {raddr}')
+
+        try:
+            sck.connect(raddr)
+            logger.debug(f'[r] Success attempt: {sck}')
+            return sck
+
+        except ConnectionRefusedError:
+            logger.debug(f'[r] Can\'t to connect to {raddr}')
+        except OSError:
+            logger.error(f'[reconnect] OSError')
+
+        time.sleep(0.5)
+
+    sck.close()
+    return sck
 
 
 # Function to open the file explorer to a specific path

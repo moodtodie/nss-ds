@@ -68,6 +68,7 @@ class ClientApp(tk.Tk):
         # File name
         self.file_path_entry = ttk.Entry(self, width=60)
         self.file_path_entry.grid(row=5, column=0, columnspan=3, sticky=tk.N + tk.S + tk.E + tk.W, pady=10, padx=10)
+        self.file_path_entry.insert(tk.END, 'D:/Projects/bsuir/term6/NSS&DS/lw2/resources/client/уа.jpg')
         # self.file_path_entry.disabled()
 
         # Choose a file button
@@ -118,6 +119,16 @@ class ClientApp(tk.Tk):
         #     self.show_notification("Error", f"Unsuccessful attempt to connect to {ip_address}:{port}.\n"
         #                                     f"Check ip address and port are correct.")
 
+    def reconnect(self, time_out=10):
+        # attempts to reconnect
+        for i in range(time_out):
+            time.sleep(1)  # fail attempt
+
+            self.set_server_address_and_port()
+            if self.is_connected:
+                return True  # success attempt
+        return False  # time out
+
     @staticmethod
     def clear_entry(entry_widget):
         """Clear the content of the given entry widget."""
@@ -153,7 +164,10 @@ class ClientApp(tk.Tk):
         """Open a file chooser dialog and print the selected file path."""
         file_path = filedialog.askopenfilename(title="Choose a file")
         self.clear_entry(self.file_path_entry)
+
         self.file_path_entry.insert(0, file_path)
+        self.file_path_entry.xview(tk.END)
+
         logger.info(f"Selected file: {file_path}")
 
     @staticmethod
@@ -196,10 +210,10 @@ class ClientApp(tk.Tk):
             self.append_to_log(f'{message}\n')
 
             self.handle_sent_message(message)
-        except OSError:
-            logger.error(f'OSError: Unable to send a "{message}" message')
-            self.show_notification("Error", f"Can't send a \"{message}\" message.\n"
-                                            f"Check your connection and try again.")
+        # except OSError:
+        #     logger.error(f'OSError: Unable to send a "{message}"')
+        #     self.show_notification("Error", f"Can't send a \"{message}\" message.\n"
+        #                                     f"Check your connection and try again.")
         except AttributeError:
             logger.error(f"AttributeError: 'NoneType' object has no attribute 'encode'")
         else:
@@ -220,11 +234,11 @@ class ClientApp(tk.Tk):
                     # Receive data from the server
                     response = self.socket.recv(1024)
 
-                    if response == b'downloading...':
-                        self.is_downloading = True
-                        while self.is_downloading:
-                            time.sleep(0.1)
-                        continue
+                    # if response == b'downloading...':
+                    #     self.is_downloading = True
+                    #     while self.is_downloading:
+                    #         time.sleep(0.1)
+                    #     continue
 
                     logger.debug(f"Received from server: {response}")
                     self.append_to_log(f'{response.decode()}')
@@ -244,7 +258,7 @@ class ClientApp(tk.Tk):
                     else:
                         counter = 0
             except OSError:
-                logger.error(f'OSError: listener')
+                logger.error(f'[listener] OSError')
                 self.disconnect()
 
     def append_to_log(self, message):
