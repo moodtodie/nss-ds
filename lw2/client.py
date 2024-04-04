@@ -70,6 +70,8 @@ class ClientApp(tk.Tk):
         self.file_path_entry = ttk.Entry(self, width=60)
         self.file_path_entry.grid(row=5, column=0, columnspan=3, sticky=tk.N + tk.S + tk.E + tk.W, pady=10, padx=10)
         self.file_path_entry.insert(tk.END, 'D:/Projects/bsuir/term6/NSS&DS/lw2/resources/client/уа.jpg')
+        self.root_dir = os.path.curdir + '\\resources\\client'
+        file_manager.crete_directory(self.root_dir)
         # self.file_path_entry.disabled()
 
         # Choose a file button
@@ -171,10 +173,8 @@ class ClientApp(tk.Tk):
 
         logger.info(f"Selected file: {file_path}")
 
-    @staticmethod
-    def open_downloads():
-        path = os.path.curdir + '\\resources\\client'
-        file_manager.open_explorer(path)
+    def open_downloads(self):
+        file_manager.open_explorer(self.root_dir)
 
     def handle_sent_message(self, message):
         command = message.split()[0].upper()
@@ -182,10 +182,8 @@ class ClientApp(tk.Tk):
         if command == "UPLOAD":
             file_manager.send_file(self.socket, self.file_path_entry.get())
         elif command == "DOWNLOAD":
-            directory = os.path.curdir + '\\resources\\client'
-
             logger.debug("Downloading started")
-            file_manager.receive_file(self.socket, f'{directory}\\{arguments}')
+            file_manager.receive_file(self.socket, f'{self.root_dir}\\{arguments}')
             logger.debug("Downloading finished")
 
             response = self.socket.recv(1024)

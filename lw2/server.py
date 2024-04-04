@@ -37,6 +37,8 @@ class ConnectionHandler:
         self.root_dir = os.path.curdir + '\\resources\\server'
         self.user_dir = ''
 
+        file_manager.crete_directory(self.root_dir)
+
     def start(self):
         self.listener()
 
