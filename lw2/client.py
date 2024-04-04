@@ -11,6 +11,7 @@ import colorlog
 
 import service.file_manager as file_manager
 from service.logger_conf import logging_level, console_handler
+from service.service import get_subnet, get_local_ip
 
 # Создание и настройка логгера
 logger = colorlog.getLogger(__name__)
@@ -35,7 +36,7 @@ class ClientApp(tk.Tk):
 
         # Server IP address field
         self.server_ip_address_entry = ttk.Entry(self, width=45)
-        self.server_ip_address_entry.insert(0, 'localhost')
+        self.server_ip_address_entry.insert(0, get_subnet(get_local_ip()))
         self.server_ip_address_entry.grid(row=1, column=1, columnspan=2, sticky=tk.N + tk.S + tk.E + tk.W, pady=10,
                                           padx=(0, 10))
 
