@@ -9,6 +9,7 @@ import service.file_manager as file_manager
 from service.file_manager import get_files_and_dirs
 from service.formatter import format_time
 from service.logger_conf import console_handler, logging_level
+from service.service import get_local_ip
 
 # Создание и настройка логгера
 logger = colorlog.getLogger(__name__)
@@ -17,7 +18,8 @@ logger.setLevel(logging_level)
 logger.addHandler(console_handler)
 
 # Настройки сервера
-HOST = '127.0.0.1'  # Локальный адрес
+# HOST = '127.0.0.1'  # Локальный адрес
+HOST = get_local_ip()  # Локальный адрес
 PORT = 5500  # Произвольный порт
 run_time = time.time_ns()  # Время запуска сервера
 response_ending = '\r\n> '
