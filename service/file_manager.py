@@ -25,6 +25,13 @@ def get_files_and_dirs(directory):
     return files, dirs
 
 
+def crete_directory(dir_path):
+    # Check if the directory exists
+    if not os.path.exists(dir_path):
+        # If the directory does not exist, create it
+        os.makedirs(dir_path)
+
+
 def receive_file_size(sck: socket.socket):
     fmt = "<Q"
     expected_bytes = struct.calcsize(fmt)
@@ -55,6 +62,7 @@ def receive_file(sck: socket.socket, filename):
 
     counter = 0
 
+    logger.debug(f'Socket before: {sck}')
     with open(filename, "wb") as f:
         received_bytes = 0
         while received_bytes < filesize:
@@ -64,17 +72,26 @@ def receive_file(sck: socket.socket, filename):
                     f.write(chunk)
                     received_bytes += len(chunk)
 
-                if counter >= 10:  # Искусственый обрыв сети
-                    counter = 0
-                else:
+                if chunk == b'':
                     counter += 1
+                    time.sleep(0.1)
+                else:
+                    counter = 0
 
+                # if counter > 0 and counter % 10 == 0:
+                #     logger.debug(f'Socket atp {counter}: {sck}')
+
+                if counter >= 50:  # Искусственый обрыв сети
+                    logger.error(f"Unable to receive file")
+                    logger.debug(f'Socket after:  {sck}')
+                    # to-do:  delete file
+                    return
             except ConnectionResetError:
                 logger.error(f'[receive_file] ConnectionResetError')
 
                 # wait reconnect
                 logger.debug(f'Socket: {sck}')
-                sck = wait_reconnect(sck, laddr, raddr)
+                # sck = wait_reconnect(sck, laddr, raddr)
                 logger.debug(f'Recovered socket: {sck}')
 
                 if sck.fileno() != -1:
@@ -88,7 +105,7 @@ def receive_file(sck: socket.socket, filename):
 
 
 def send_file(sck: socket.socket, filename):
-    laddr = sck.getsockname()
+    # laddr = sck.getsockname()
     raddr = sck.getpeername()
 
     filesize = os.path.getsize(filename)
@@ -96,6 +113,7 @@ def send_file(sck: socket.socket, filename):
     sck.sendall(struct.pack("<Q", filesize))
 
     counter = 0
+    attempt = 0
 
     logger.debug(f'Send filesize: {filesize}')
     with open(filename, "rb") as f:
@@ -103,7 +121,7 @@ def send_file(sck: socket.socket, filename):
 
             if counter >= 20:  # Искусственый обрыв сети
                 logger.debug(f'Socket closed: {sck}')
-                sck.close()
+                # sck.shutdown(socket.SHUT_WR)
 
                 counter = 0
             else:
@@ -112,24 +130,35 @@ def send_file(sck: socket.socket, filename):
             while True:
                 try:
                     sck.sendall(read_bytes)
+                    attempt = 0
                     break
-                # except ConnectionResetError:
-                #     logger.error(f'[send_file] ConnectionResetError:')
-                # except OSError:
-                #     logger.error(f'[send_file] OSError')
-                except Exception:
+                except socket.error:
                     logger.error(f'[send_file] Exception')
 
                     # attempt to reconnect
-                    logger.debug(f'Socket: {sck}')
-                    sck = reconnect(sck, laddr, raddr)
-                    logger.debug(f'Recovered socket: {sck}')
+                    # logger.debug(f'Socket: {sck}')
+                    attempt += 1
+                    if attempt >= 35:
+                        logger.debug(f'[send_file] Successfully attempt #{attempt}')
+                        sck.shutdown(socket.SHUT_RD)
+                        # sck.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+                        # sck.bind(raddr)
+                    else:
+                        logger.debug(f'[send_file] Bad attempt #{attempt}')
+                        time.sleep(0.1)
 
-                    time.sleep(0.1)
+                    # sck = reconnect(sck, laddr, raddr)
 
-                    if sck.fileno() != -1:
-                        continue  # successfully attempt
-                    return  # time out
+                    # time.sleep(0.1)
+
+                    if attempt >= 50:
+                        # os._exit(1)
+                        return
+                    continue
+
+                    # if sck.fileno() != -1:
+                    #     continue  # successfully attempt
+                    # return  # time out
 
 
 def wait_reconnect(sck: socket.socket, laddr, raddr, time_out=15) -> socket.socket:
