@@ -1,6 +1,5 @@
 import os
 import socket
-import struct
 import time
 import webbrowser
 
@@ -31,23 +30,17 @@ def crete_directory(dir_path):
 
 
 def receive_file_size(sck: socket.socket):
-    fmt = "<Q"
-    expected_bytes = struct.calcsize(fmt)
-    received_bytes = 0
-    stream = bytes()
-    while received_bytes < expected_bytes:
-        try:
-            chunk = sck.recv(expected_bytes - received_bytes)
-            stream += chunk
-            received_bytes += len(chunk)
-        except ConnectionResetError:  # Обрыв соединения
-            logger.error("[receive_file_size] ConnectionResetError")
+    filesize = ''
+    while True:
+        recv = sck.recv(1024).decode()
+
+        filesize += recv
+
+        if recv.find('fse') != -1:
+            filesize = filesize.strip('fse')
             break
-        except OSError:
-            logger.error(f"[receive_file_size] OSError")
-            return 0
-    filesize = struct.unpack(fmt, stream)[0]
-    return filesize
+
+    return int(filesize)
 
 
 def receive_file(sck: socket.socket, filename):
@@ -56,21 +49,17 @@ def receive_file(sck: socket.socket, filename):
     logger.debug(f'Received filesize: {filesize}')
 
     attempt = 0
-    counter = 0
 
     logger.debug(f'Socket before: {sck}')
     with open(filename, "wb") as f:
         received_bytes = 0
-        logger.debug(f'Starting receiving')
+
         while received_bytes < filesize:
             try:
                 chunk = sck.recv(1024)
                 if chunk:
                     f.write(chunk)
                     received_bytes += len(chunk)
-                    counter += 1  # DEBUG
-                    logger.debug(f'[{counter}] Received chunk has been write. Chunk: {chunk}')
-
                 if chunk == b'' or not chunk:
                     attempt += 1
                     time.sleep(0.1)
@@ -101,9 +90,11 @@ def receive_file(sck: socket.socket, filename):
 def send_file(sck: socket.socket, filename):
     filesize = os.path.getsize(filename)
 
-    sck.sendall(struct.pack("<Q", filesize))
+    time.sleep(0.2)
+    sck.sendall(f'{filesize}'.encode())
+    time.sleep(0.2)
+    sck.sendall(b'fse')
 
-    counter = 0
     attempt = 0
 
     logger.debug(f'Send filesize: {filesize}')
@@ -113,8 +104,6 @@ def send_file(sck: socket.socket, filename):
                 try:
                     sck.sendall(read_bytes)
                     attempt = 0
-                    counter += 1
-                    logger.debug(f'[{counter}] Send chunk. Chunk: {read_bytes}')
                     break
                 except socket.error:
                     logger.error(f'[send_file] Exception')
