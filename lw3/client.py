@@ -67,7 +67,7 @@ class ClientApp(tk.Tk):
         # File name
         self.file_path_entry = ttk.Entry(self, width=60)
         self.file_path_entry.grid(row=5, column=0, columnspan=3, sticky=tk.N + tk.S + tk.E + tk.W, pady=10, padx=10)
-        # self.file_path_entry.insert(tk.END, 'D:/Projects/bsuir/term6/NSS&DS/lw2/resources/client/уа.jpg')
+        self.file_path_entry.insert(tk.END, 'D:/Projects/bsuir/term6/NSS&DS/lw2/resources/client/уа.jpg')
         self.root_dir = os.path.curdir + '\\resources\\client'
         file_manager.crete_directory(self.root_dir)
 
@@ -166,9 +166,11 @@ class ClientApp(tk.Tk):
         command = message.split()[0].upper()
         arguments = " ".join(message.split()[1:])
         if command == "UPLOAD":
-            file_manager.send_file(self.socket, self.file_path_entry.get())
+            # file_manager.send_file(self.socket, self.file_path_entry.get())
+            file_manager.send_file_udp(self.socket, self.file_path_entry.get())
         elif command == "DOWNLOAD":
-            file_manager.receive_file(self.socket, f'{self.root_dir}\\{arguments}')
+            # file_manager.receive_file(self.socket, f'{self.root_dir}\\{arguments}')
+            file_manager.receive_file_udp(self.socket, f'{self.root_dir}\\{arguments}')
             logger.info(f"Download complete")
 
     def send_message(self, message_entry):
@@ -247,9 +249,12 @@ class ClientApp(tk.Tk):
 
 
 if __name__ == "__main__":
-    app = ClientApp()
-    app.mainloop()
-    app.disconnect()
+    try:
+        app = ClientApp()
+        app.mainloop()
+        app.disconnect()
+    except KeyboardInterrupt:
+        pass
 
     time.sleep(0.3)
     os._exit(0)

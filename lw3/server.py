@@ -67,13 +67,15 @@ class ConnectionHandler:
             if not content:
                 self.send_message('Fail. Bad request')
                 return
-            file_manager.receive_file(self.client_socket, f'{directory}\\{content}')
+            # file_manager.receive_file(self.client_socket, f'{directory}\\{content}')
+            file_manager.receive_file_udp(self.client_socket, f'{directory}\\{content}')
             self.send_message('Success')
         elif 'DOWNLOAD' == command:  # Запрос на скачивание файла c сервера
             if not content:
                 self.send_message('Fail. Bad request')
                 return
-            file_manager.send_file(self.client_socket, f'{directory}\\{content}')
+            # file_manager.send_file(self.client_socket, f'{directory}\\{content}')
+            file_manager.send_file_udp(self.client_socket, f'{directory}\\{content}')
             self.send_message('Success')
         elif 'LS' == command:  # Запрос на полуение списка файлов и катологов
             logger.debug(f'Directory: {directory}')

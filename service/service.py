@@ -1,3 +1,4 @@
+import re
 import socket
 
 
@@ -18,3 +19,13 @@ def get_subnet(ip_address):
     elements = ip_address.split('.')
     subnet = '.'.join(elements[:3])
     return subnet + '.'
+
+
+def extract_addr_port(s: str):
+    match = re.match(r"a:(.*?);p:(\d+)", s)
+    if match:
+        addr = match.group(1)
+        port = int(match.group(2))
+        return addr, port
+    else:
+        return None, None
