@@ -135,86 +135,111 @@ BUFFER_SIZE = 1024
 SEQUENCE_SIZE = 4
 
 
-def send_file_udp(sck: socket.socket, filename: str, timeout: float = 5):
+def send_file_udp(sck: socket.socket, filename: str, timeout: float = 10):
     (addr, port) = extract_addr_port(sck.recv(1024).decode())
 
     logger.info(f"[UDP] Server open on {addr}:{port}")
     client_socket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
     client_socket.settimeout(timeout)
-    sequence = 0
+    sequence = 1
 
     # Transmitting - start
 
     with open(filename, "rb") as f:
-        while True:
+        filesize = os.path.getsize(filename)
+        sending_size = 0
+        while sending_size < filesize:
             data = f.read(BUFFER_SIZE)
             if not data:
                 break
             packet = sequence.to_bytes(SEQUENCE_SIZE, byteorder='big') + data
+
             while True:
                 try:
                     client_socket.sendto(packet, (addr, port))
+
                     if sequence <= 10 or (180 <= sequence < 230):
                         logger.debug(f'[{sequence}] Send packet. Packet: {packet}')
+
                     response, _ = client_socket.recvfrom(SEQUENCE_SIZE)
-                    if response == b'FIN':
-                        break
+
                     if sequence <= 10 or (180 <= sequence < 230):
                         logger.debug(f'[{sequence}] Receive response: {response}')
+
                     ack = int.from_bytes(response, byteorder='big')
                     if ack == sequence:
+                        sending_size += len(data)
                         break
-                # except ConnectionResetError:
-                #     break
+                except ConnectionResetError:
+                    return False
                 except socket.timeout:
                     logger.error(f"[UDP] Timeout. Resending a packet...")
+                    client_socket.close()
+                    return False
             sequence += 1
 
+    try:
+        client_socket.sendto(b'FIN', (addr, port))
+    except Exception:
+        pass
     # Transmitting - end
 
-    # client_socket.sendto(b"", (addr, port))  # Сигнал конца файла
     logger.info(f"[UDP] File successfully sent")
     client_socket.close()
-    return None
+    return True
 
 
-def receive_file_udp(sck: socket.socket, filename: str):
-    addr, port = (get_local_ip(), PORT)
+def receive_file_udp(sck: socket.socket, filename: str, timeout: float = 10):
+    addr1, port = (get_local_ip(), PORT)
 
     server_socket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-    server_socket.bind((addr, port))
+    server_socket.bind((addr1, port))
+    server_socket.settimeout(timeout)
 
-    sck.sendall(f"a:{addr};p:{port}".encode())
+    sck.sendall(f"a:{addr1};p:{port}".encode())
 
-    logger.info(f"[UDP] Server started on {addr}:{port}")
+    logger.info(f"[UDP] Server started on {addr1}:{port}")
+
+    is_active = False
 
     with open(filename, "wb") as f:
-        expected_sequence = 0
+        expected_sequence = 1
         while True:
-            data, addr = server_socket.recvfrom(BUFFER_SIZE + SEQUENCE_SIZE)
-            sequence = int.from_bytes(data[:SEQUENCE_SIZE], byteorder='big')
-            if sequence <= 10 or (180 <= sequence < 230):
-                logger.debug(f'[{sequence}] Receive packet. Packet: {data}')
+            try:
+                data, addr = server_socket.recvfrom(BUFFER_SIZE + SEQUENCE_SIZE)
+                if data == b'FIN':
+                    break
+                sequence = int.from_bytes(data[:SEQUENCE_SIZE], byteorder='big')
 
-            if sequence == expected_sequence:
-                f.write(data[SEQUENCE_SIZE:])
-                expected_sequence += 1
-                response = expected_sequence.to_bytes(SEQUENCE_SIZE, byteorder='big')
-                server_socket.sendto(response, addr)
                 if sequence <= 10 or (180 <= sequence < 230):
-                    logger.debug(f'[{sequence}] SEQ - OK. Send response: {response}')
-            else:
-                response = (expected_sequence - 1).to_bytes(SEQUENCE_SIZE, byteorder='big')
-                server_socket.sendto(response, addr)
-                if sequence <= 10 or (180 <= sequence < 230):
-                    logger.debug(f'[{sequence}] SEQ - Fail. Send response: {response}')
+                    logger.debug(f'[{expected_sequence}] Receive packet. Packet: {data}')
 
-            if len(data) < BUFFER_SIZE + SEQUENCE_SIZE:
-                # response = (expected_sequence - 1).to_bytes(SEQUENCE_SIZE, byteorder='big')
-                # server_socket.sendto(response, addr)
-                server_socket.sendto(b'FIN', addr)
-                break
+                # DEBUG
+                # if sequence == 7 and not is_active:
+                #     sequence = 6
+                #     # time.sleep(15)
+                #     is_active = True
+
+                if sequence == expected_sequence:
+                    f.write(data[SEQUENCE_SIZE:])
+                    expected_sequence += 1
+
+                response = sequence.to_bytes(SEQUENCE_SIZE, byteorder='big')
+                server_socket.sendto(response, addr)
+
+                # DEBUG
+                if sequence <= 10 or (180 <= sequence < 230):
+                    if int.from_bytes(data[:SEQUENCE_SIZE], byteorder='big') == (expected_sequence - 1):
+                        logger.debug(f'[{expected_sequence - 1}] SEQ - OK. Send response: {response}')
+                    else:
+                        logger.debug(f'[{expected_sequence}] ({sequence}) SEQ - Fail. Send response: {response}')
+            except ConnectionResetError:
+                return False
+            except socket.timeout:
+                logger.error(f"[UDP] Timeout. Resending a packet...")
+                server_socket.close()
+                return False
 
     logger.info(f"[UDP] File successfully received")
     server_socket.close()
-    return None
+    return True

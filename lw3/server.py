@@ -59,24 +59,33 @@ class ConnectionHandler:
         directory = f'{self.root_dir}\\{self.user_dir}'
 
         # Commands for laboratory work #1
-        if 'TIME' == command:  # Возвращаем текущее время сервера
+        if 'ECHO' == command:
+            self.send_message(content)
+        elif 'TIME' == command:  # Возвращаем текущее время сервера
             self.send_message(datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S"))
+        elif 'WORK_TIME' == command:  # Возвращаем время работы сервера
+            execution_time = time.time_ns() - run_time
+            self.send_message(format_time(execution_time))
 
-        # Commands for laboratory work #2
+        # Commands for laboratory work #3
         elif 'UPLOAD' == command:  # Запрос на закачку файла на сервер
             if not content:
                 self.send_message('Fail. Bad request')
                 return
             # file_manager.receive_file(self.client_socket, f'{directory}\\{content}')
-            file_manager.receive_file_udp(self.client_socket, f'{directory}\\{content}')
-            self.send_message('Success')
+            if file_manager.receive_file_udp(self.client_socket, f'{directory}\\{content}'):
+                self.send_message('Success')
+            else:
+                self.send_message('Fail')
         elif 'DOWNLOAD' == command:  # Запрос на скачивание файла c сервера
             if not content:
                 self.send_message('Fail. Bad request')
                 return
             # file_manager.send_file(self.client_socket, f'{directory}\\{content}')
-            file_manager.send_file_udp(self.client_socket, f'{directory}\\{content}')
-            self.send_message('Success')
+            if file_manager.send_file_udp(self.client_socket, f'{directory}\\{content}'):
+                self.send_message('Success')
+            else:
+                self.send_message('Fail')
         elif 'LS' == command:  # Запрос на полуение списка файлов и катологов
             logger.debug(f'Directory: {directory}')
             files, dirs = get_files_and_dirs(directory)
