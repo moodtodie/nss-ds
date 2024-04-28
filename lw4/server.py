@@ -1,5 +1,6 @@
 import os
 import socket
+import threading
 import time
 import datetime
 import colorlog
@@ -24,11 +25,11 @@ response_ending = '\r\n> '
 
 
 class ConnectionHandler:
-    def __init__(self, client_socket, addr):
-        self.client_socket = client_socket
-        self.addr = addr
+    def __init__(self, sck, address):
+        self.client_socket = sck
+        self.addr = address
 
-        logger.info(f"Connected by {addr}")
+        logger.info(f"Connected by {address}")
         self.send_message(f'Connected to {HOST}:{PORT}' + response_ending)
         self.is_disconnect = False
 
@@ -66,6 +67,11 @@ class ConnectionHandler:
         elif 'WORK_TIME' == command:  # Возвращаем время работы сервера
             execution_time = time.time_ns() - run_time
             self.send_message(format_time(execution_time))
+        elif 'THREADS' == command:  # Возвращаем именна активных потоков
+            threads_name = []
+            for thread in threading.enumerate():
+                threads_name.append(thread.name)
+            self.send_message(threads_name.__str__())
 
         # Commands for laboratory work #2
         elif 'UPLOAD' == command:  # Запрос на закачку файла на сервер
@@ -149,27 +155,18 @@ server_socket = None
 if __name__ == '__main__':
     logger.info("Server is running...")
 
-    # Создание сокета
     server_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-
-    # Что здесь?
     server_socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-
-    # Привязка сокета к адресу и порту
     server_socket.bind((HOST, PORT))
-
-    # Ожидание подключения клиентов
     server_socket.listen(5)
-
     logger.info(f"Server started on {HOST}:{PORT}")
 
-    while True:
-        try:
-            # Принятие соединения
+    try:
+        while True:
             client_socket, addr = server_socket.accept()
-            ConnectionHandler(client_socket, addr).start()
-        except KeyboardInterrupt:
-            break
-
-    logger.info(f"Shutting down...")
-    server_socket.close()
+            handler_instance = ConnectionHandler(client_socket, addr)
+            threading.Thread(target=handler_instance.start).start()
+    except KeyboardInterrupt:
+        logger.info(f"Shutting down...")
+    finally:
+        server_socket.close()
